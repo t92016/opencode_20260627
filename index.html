@@ -5,312 +5,262 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>打磚塊遊戲</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: 'Segoe UI', sans-serif; }
-.game-wrapper { text-align: center; }
-canvas { background: #16213e; border: 2px solid #e94560; border-radius: 8px; box-shadow: 0 0 30px rgba(233,69,96,0.3); }
-.score { color: #fff; font-size: 24px; margin-bottom: 15px; }
-.score span { color: #e94560; font-weight: bold; }
-.lives { color: #e94560; font-size: 20px; margin-bottom: 10px; }
-.controls { color: #aaa; margin-top: 15px; font-size: 14px; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'Segoe UI',sans-serif}
+.game-wrapper{text-align:center}
+canvas{background:#16213e;border:2px solid #e94560;border-radius:8px;box-shadow:0 0 30px rgba(233,69,96,0.3);display:block}
+.status{color:#fff;font-size:22px;margin-bottom:12px}
+.status span{color:#e94560;font-weight:bold}
+.hint{color:#888;margin-top:12px;font-size:14px}
 </style>
 </head>
 <body>
 <div class="game-wrapper">
-  <div class="score">得分：<span id="score">0</span> ｜ 生命：<span id="lives">3</span></div>
-  <canvas id="game" width="600" height="400"></canvas>
-  <div class="controls">← → 移動 ｜ 空白鍵發球 ｜ R 重新開始</div>
+  <div class="status">得分 <span id="score">0</span> ｜ 生命 <span id="lives">3</span></div>
+  <canvas id="c" width="600" height="400"></canvas>
+  <div class="hint">← → 移動 ｜ 空白鍵發球 ｜ R 重來</div>
 </div>
 <script>
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const scoreEl = document.getElementById('score');
-const livesEl = document.getElementById('lives');
-
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
 const W = 600, H = 400;
-const paddleW = 80, paddleH = 12;
-const ballR = 6;
-const brickRows = 5, brickCols = 8;
-const brickW = 65, brickH = 20, brickPad = 8, brickTop = 35;
 
-let score = 0, lives = 3, running = false, animId = null;
-let paddle = { x: W/2 - paddleW/2, y: H - 30, w: paddleW };
-let ball = { x: W/2, y: H - 40, r: ballR, dx: 3, dy: -3 };
+let score = 0, lives = 3, running = false;
+let paddle = { x: 260, y: 370, w: 80, h: 12 };
+let ball = { x: 300, y: 358, r: 6, dx: 3, dy: -3 };
 let bricks = [];
-let keys = { left: false, right: false };
 let particles = [];
 let shake = 0;
-let combos = 0;
+let combo = 0;
+let keys = {};
 
-// Web Audio API 音效
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// Audio
+const ac = new (window.AudioContext || window.webkitAudioContext)();
 
-function playTone(freq, duration, type, volume) {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = type || 'square';
-  gain.gain.setValueAtTime(volume || 0.1, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + duration);
+function tone(f, d, t, v) {
+  if (ac.state === 'suspended') ac.resume();
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = t || 'square';
+  g.gain.setValueAtTime(v || 0.08, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + d);
+  o.connect(g);
+  g.connect(ac.destination);
+  o.start();
+  o.stop(ac.currentTime + d);
 }
 
-function sfxPaddle() {
-  playTone(440, 0.08, 'square', 0.06);
-}
-
-function sfxBrick(freq) {
-  playTone(freq || 520, 0.12, 'square', 0.07);
-}
-
-function sfxWall() {
-  playTone(300, 0.05, 'triangle', 0.04);
-}
-
-function sfxLose() {
-  playTone(200, 0.3, 'sawtooth', 0.08);
-  setTimeout(() => playTone(150, 0.4, 'sawtooth', 0.06), 150);
-}
-
-function sfxClear() {
-  [523, 659, 784, 1047].forEach((f, i) => {
-    setTimeout(() => playTone(f, 0.15, 'square', 0.07), i * 100);
-  });
-}
-
-function sfxGameOver() {
-  playTone(400, 0.2, 'sawtooth', 0.1);
-  setTimeout(() => playTone(300, 0.2, 'sawtooth', 0.08), 200);
-  setTimeout(() => playTone(200, 0.4, 'sawtooth', 0.06), 400);
-}
-
-// 粒子特效
-function spawnParticles(x, y, color, count) {
-  for (let i = 0; i < (count || 12); i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 1 + Math.random() * 3;
-    particles.push({
-      x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 1,
-      decay: 0.015 + Math.random() * 0.02,
-      size: 2 + Math.random() * 4,
-      color
-    });
+function sfx(type) {
+  switch(type) {
+    case 'paddle': tone(440, 0.08, 'square', 0.06); break;
+    case 'wall': tone(300, 0.05, 'triangle', 0.04); break;
+    case 'brick': tone(520 + combo * 40, 0.12, 'square', 0.07); break;
+    case 'lose': tone(200, 0.3, 'sawtooth', 0.08); setTimeout(() => tone(150, 0.4, 'sawtooth', 0.06), 150); break;
+    case 'over': tone(400,0.2,'sawtooth',0.1);setTimeout(()=>tone(300,0.2,'sawtooth',0.08),200);setTimeout(()=>tone(200,0.4,'sawtooth',0.06),400); break;
+    case 'clear': [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.15,'square',0.07),i*100)); break;
   }
 }
 
-function spawnScorePopup(x, y, text) {
-  particles.push({
-    x, y, vx: 0, vy: -2, life: 1, decay: 0.02, size: 14, color: '#fff',
-    text, isText: true
-  });
+// Particles
+function spawn(x, y, color, n) {
+  for (let i = 0; i < (n || 10); i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 1 + Math.random() * 3;
+    particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, decay: 0.015 + Math.random()*0.02, size: 2+Math.random()*4, color });
+  }
 }
 
 function updateParticles() {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    if (!p.isText) p.vy += 0.05;
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.05;
     p.life -= p.decay;
     if (p.life <= 0) particles.splice(i, 1);
   }
 }
 
-function drawParticles() {
-  for (const p of particles) {
-    ctx.globalAlpha = p.life;
-    if (p.isText) {
-      ctx.fillStyle = p.color;
-      ctx.font = 'bold 14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.text, p.x, p.y);
-    } else {
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.globalAlpha = 1;
+// Rounded rect helper
+function rRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }
 
+// Bricks
 function initBricks() {
   bricks = [];
-  for (let r = 0; r < brickRows; r++) {
-    for (let c = 0; c < brickCols; c++) {
+  const cols = 8, rows = 5;
+  const bw = 65, bh = 20, pad = 8;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       bricks.push({
-        x: c * (brickW + brickPad) + brickPad,
-        y: r * (brickH + brickPad) + brickTop,
-        w: brickW, h: brickH,
+        x: c * (bw + pad) + pad,
+        y: r * (bh + pad) + 35,
+        w: bw, h: bh,
         alive: true,
-        color: `hsl(${(r/brickRows)*360}, 80%, 60%)`
+        color: `hsl(${(r/rows)*360}, 80%, 60%)`
       });
     }
   }
 }
 
-function resetBall() {
-  ball.x = paddle.x + paddle.w / 2;
-  ball.y = paddle.y - ballR;
+function reset() {
+  paddle.x = 260;
+  ball.x = paddle.x + 40;
+  ball.y = paddle.y - 6;
   ball.dx = (Math.random() > 0.5 ? 1 : -1) * 3;
   ball.dy = -3;
   running = false;
-  combos = 0;
+  combo = 0;
 }
 
 function draw() {
   ctx.save();
   if (shake > 0) {
-    ctx.translate(Math.random() * shake - shake/2, Math.random() * shake - shake/2);
-    shake *= 0.9;
-    if (shake < 0.5) shake = 0;
+    ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+    shake *= 0.85;
+    if (shake < 0.3) shake = 0;
   }
+  ctx.clearRect(0, 0, W, H);
 
-  ctx.clearRect(-10, -10, W + 20, H + 20);
-
-  // 磚塊
-  for (let b of bricks) {
+  // Bricks
+  for (const b of bricks) {
     if (!b.alive) continue;
     ctx.fillStyle = b.color;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.roundRect(b.x, b.y, b.w, b.h, 4);
+    rRect(b.x, b.y, b.w, b.h, 4);
     ctx.fill();
-    ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.beginPath();
-    ctx.roundRect(b.x + 2, b.y + 2, b.w - 4, b.h / 3, 2);
+    rRect(b.x+3, b.y+3, b.w-6, 5, 2);
     ctx.fill();
   }
 
-  // 球（發光效果）
+  // Ball glow
   ctx.shadowColor = '#fff';
   ctx.shadowBlur = 15;
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  // 球拖尾
-  if (running) {
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(ball.x - ball.dx, ball.y - ball.dy, ball.r * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  // 擋板
+  // Paddle glow
   ctx.shadowColor = '#e94560';
   ctx.shadowBlur = 12;
   ctx.fillStyle = '#e94560';
-  ctx.beginPath();
-  ctx.roundRect(paddle.x, paddle.y, paddle.w, paddleH, 6);
+  rRect(paddle.x, paddle.y, paddle.w, paddle.h, 6);
   ctx.fill();
   ctx.shadowBlur = 0;
   ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  ctx.beginPath();
-  ctx.roundRect(paddle.x + 4, paddle.y + 2, paddle.w - 8, 4, 2);
+  rRect(paddle.x+5, paddle.y+3, paddle.w-10, 4, 2);
   ctx.fill();
 
   ctx.restore();
 
-  // 粒子（不受 shake 影響）
-  drawParticles();
+  // Particles (unaffected by shake)
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function update() {
-  if (keys.left && paddle.x > 0) paddle.x -= 5;
-  if (keys.right && paddle.x + paddle.w < W) paddle.x += 5;
+  // Paddle movement
+  if (keys['ArrowLeft'] && paddle.x > 0) paddle.x -= 5;
+  if (keys['ArrowRight'] && paddle.x + paddle.w < W) paddle.x += 5;
 
   updateParticles();
 
   if (!running) {
-    resetBall();
+    ball.x = paddle.x + 40;
+    ball.y = paddle.y - 6;
     return;
   }
 
   ball.x += ball.dx;
   ball.y += ball.dy;
 
+  // Wall bounce
   if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
     ball.dx = -ball.dx;
-    sfxWall();
+    sfx('wall');
   }
   if (ball.y - ball.r < 0) {
     ball.dy = -ball.dy;
-    sfxWall();
+    sfx('wall');
   }
 
-  // 擋板碰撞
-  if (ball.y + ball.r > paddle.y && ball.y + ball.r < paddle.y + paddleH + 4 &&
+  // Paddle bounce
+  if (ball.y + ball.r > paddle.y && ball.y + ball.r < paddle.y + paddle.h + 4 &&
       ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
-    let hit = (ball.x - paddle.x) / paddle.w;
-    let angle = (hit - 0.5) * Math.PI * 0.7;
-    let speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy) + 0.1;
+    const hit = (ball.x - paddle.x) / paddle.w;
+    const angle = (hit - 0.5) * Math.PI * 0.7;
+    const speed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy) + 0.1;
     ball.dx = speed * Math.sin(angle);
     ball.dy = -speed * Math.cos(angle);
-    sfxPaddle();
+    sfx('paddle');
     shake = 3;
-    combos = 0;
-    spawnParticles(ball.x, paddle.y, '#e94560', 5);
+    combo = 0;
+    spawn(ball.x, paddle.y, '#e94560', 5);
   }
 
-  // 落球
+  // Ball fall
   if (ball.y + ball.r > H) {
     lives--;
-    livesEl.textContent = lives;
-    sfxLose();
+    document.getElementById('lives').textContent = lives;
+    sfx('lose');
     shake = 8;
-    combos = 0;
+    combo = 0;
     if (lives > 0) {
       running = false;
-      resetBall();
     } else {
-      sfxGameOver();
+      sfx('over');
+      running = false;
       setTimeout(() => {
         alert('遊戲結束！得分：' + score);
         initBricks();
         score = 0;
         lives = 3;
-        livesEl.textContent = lives;
-        scoreEl.textContent = score;
-        resetBall();
-      }, 500);
+        combo = 0;
+        particles = [];
+        document.getElementById('score').textContent = '0';
+        document.getElementById('lives').textContent = '3';
+        reset();
+      }, 300);
     }
     return;
   }
 
-  // 磚塊碰撞
-  for (let b of bricks) {
+  // Brick collision
+  for (const b of bricks) {
     if (!b.alive) continue;
     if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
         ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h) {
       b.alive = false;
-      combos++;
-      score += 10 * combos;
-      scoreEl.textContent = score;
-      sfxBrick(520 + combos * 40);
+      combo++;
+      score += 10 * combo;
+      document.getElementById('score').textContent = score;
+      sfx('brick');
       shake = 4;
-      spawnParticles(b.x + b.w / 2, b.y + b.h / 2, b.color, 15);
-      if (combos > 1) {
-        spawnScorePopup(b.x + b.w / 2, b.y - 5, '+' + (10 * combos));
-      }
-      let overlapX = Math.min(ball.x + ball.r - b.x, b.x + b.w - ball.x + ball.r);
-      let overlapY = Math.min(ball.y + ball.r - b.y, b.y + b.h - ball.y + ball.r);
-      if (overlapX < overlapY) ball.dx = -ball.dx;
+      spawn(b.x + b.w/2, b.y + b.h/2, b.color, 15);
+      const ox = Math.min(ball.x + ball.r - b.x, b.x + b.w - ball.x + ball.r);
+      const oy = Math.min(ball.y + ball.r - b.y, b.y + b.h - ball.y + ball.r);
+      if (ox < oy) ball.dx = -ball.dx;
       else ball.dy = -ball.dy;
-      if (bricks.every(b => !b.alive)) {
-        sfxClear();
+      if (bricks.every(bx => !bx.alive)) {
+        sfx('clear');
         setTimeout(() => {
           alert('恭喜過關！得分：' + score);
           initBricks();
@@ -321,40 +271,41 @@ function update() {
   }
 }
 
-function gameLoop() {
+function loop() {
   update();
   draw();
-  animId = requestAnimationFrame(gameLoop);
+  requestAnimationFrame(loop);
 }
 
+// Events
 document.addEventListener('keydown', e => {
-  if (e.key === 'ArrowLeft') keys.left = true;
-  if (e.key === 'ArrowRight') keys.right = true;
+  keys[e.key] = true;
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (!running && lives > 0) {
+      running = true;
+      const spd = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+      const ang = (Math.random() - 0.5) * 0.8;
+      ball.dx = spd * Math.sin(ang) || 2;
+      ball.dy = -spd * Math.cos(ang);
+    }
+  }
   if (e.key === 'r' || e.key === 'R') {
     initBricks();
     score = 0;
     lives = 3;
-    scoreEl.textContent = score;
-    livesEl.textContent = lives;
+    combo = 0;
     particles = [];
-    resetBall();
-  }
-  if ((e.key === ' ' || e.key === 'Enter') && !running && lives > 0) {
-    running = true;
-    let speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
-    let angle = (Math.random() - 0.5) * 0.8;
-    ball.dx = speed * Math.sin(angle) || 2;
-    ball.dy = -speed * Math.cos(angle);
+    document.getElementById('score').textContent = '0';
+    document.getElementById('lives').textContent = '3';
+    reset();
   }
 });
-document.addEventListener('keyup', e => {
-  if (e.key === 'ArrowLeft') keys.left = false;
-  if (e.key === 'ArrowRight') keys.right = false;
-});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
 
 initBricks();
-resetBall();
-gameLoop();
+reset();
+loop();
 </script>
 </body>
 </html>
