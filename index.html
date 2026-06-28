@@ -1,37 +1,103 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>打磚塊遊戲</title>
+<title>??憛???/title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: 'Segoe UI', sans-serif; }
-.game-wrapper { text-align: center; }
+.game-wrapper { text-align: center; position: relative; }
 canvas { background: #16213e; border: 2px solid #e94560; border-radius: 8px; box-shadow: 0 0 30px rgba(233,69,96,0.3); }
 .score { color: #fff; font-size: 24px; margin-bottom: 15px; }
 .score span { color: #e94560; font-weight: bold; }
 .lives { color: #e94560; font-size: 20px; margin-bottom: 10px; }
 .controls { color: #aaa; margin-top: 15px; font-size: 14px; }
+
+.overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7); display: none; justify-content: center;
+  align-items: center; z-index: 100;
+}
+.overlay.show { display: flex; }
+.panel {
+  background: #16213e; border: 2px solid #e94560; border-radius: 12px;
+  padding: 30px; min-width: 340px; text-align: center; box-shadow: 0 0 40px rgba(233,69,96,0.3);
+}
+.panel h2 { color: #e94560; margin-bottom: 15px; font-size: 28px; }
+.panel h3 { color: #fff; margin-bottom: 10px; font-size: 18px; }
+.panel input {
+  background: #1a1a2e; border: 1px solid #e94560; color: #fff; padding: 10px 15px;
+  border-radius: 6px; font-size: 16px; width: 200px; outline: none; margin: 10px 0;
+}
+.panel input:focus { border-color: #fff; }
+.panel .btn {
+  background: #e94560; color: #fff; border: none; padding: 10px 25px;
+  border-radius: 6px; font-size: 16px; cursor: pointer; margin: 5px;
+  transition: background 0.2s;
+}
+.panel .btn:hover { background: #ff6b81; }
+.panel .btn.secondary { background: #333; }
+.panel .btn.secondary:hover { background: #555; }
+.leaderboard-list { text-align: left; margin: 15px 0; max-height: 200px; overflow-y: auto; }
+.leaderboard-entry {
+  display: flex; justify-content: space-between; padding: 5px 10px;
+  color: #fff; font-size: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.leaderboard-entry:nth-child(1) { color: #ffd700; }
+.leaderboard-entry:nth-child(2) { color: #c0c0c0; }
+.leaderboard-entry:nth-child(3) { color: #cd7f32; }
+.leaderboard-entry .rank { width: 30px; }
+.leaderboard-entry .name { flex: 1; }
+.leaderboard-entry .lscore { color: #e94560; font-weight: bold; }
 </style>
 </head>
 <body>
 <div class="game-wrapper">
-  <div class="score">得分：<span id="score">0</span> ｜ 生命：<span id="lives">3</span></div>
+  <div class="score">敺?嚗?span id="score">0</span> 嚚??嚗?span id="lives">3</span></div>
   <canvas id="game" width="600" height="400"></canvas>
-  <div class="controls">← → 移動 ｜ 空白鍵發球 ｜ R 重新開始</div>
+  <div class="controls">????蝘餃? 嚚?蝛箇?萇??嚚?R ??? 嚚?L ??璁?/div>
 </div>
+
+<!-- ??璁?overlay -->
+<div class="overlay" id="lbOverlay">
+  <div class="panel">
+    <h2>?? ??璁?/h2>
+    <div class="leaderboard-list" id="lbList"></div>
+    <button class="btn secondary" onclick="closeLB()">??</button>
+  </div>
+</div>
+
+<!-- ?蝯? overlay -->
+<div class="overlay" id="gameOverOverlay">
+  <div class="panel">
+    <h2>?蝯?</h2>
+    <h3>敺?嚗?span id="finalScore" style="color:#e94560">0</span></h3>
+    <p style="color:#aaa;margin:5px 0;">頛詨?迂????璁?/p>
+    <input id="nameInput" placeholder="雿???" maxlength="10" autofocus>
+    <div><button class="btn" onclick="submitScore()">?</button><button class="btn secondary" onclick="skipScore()">頝喲?</button></div>
+  </div>
+</div>
+
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 const livesEl = document.getElementById('lives');
+const lbOverlay = document.getElementById('lbOverlay');
+const lbList = document.getElementById('lbList');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const finalScoreEl = document.getElementById('finalScore');
+const nameInput = document.getElementById('nameInput');
 
 const W = 600, H = 400;
 const paddleW = 80, paddleH = 12;
 const ballR = 6;
 const brickRows = 5, brickCols = 8;
 const brickW = 65, brickH = 20, brickPad = 8, brickTop = 35;
+const GIST_ID = 'ec73fb1a33a0f50dc4f86c1915ac2984';
+const GIST_TOKEN = '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';
+const GIST_RAW = 'https://gist.githubusercontent.com/t92016/ec73fb1a33a0f50dc4f86c1915ac2984/raw/leaderboard.json';
 
 let score = 0, lives = 3, running = false, animId = null;
 let paddle = { x: W/2 - paddleW/2, y: H - 30, w: paddleW };
@@ -41,8 +107,8 @@ let keys = { left: false, right: false };
 let particles = [];
 let shake = 0;
 let combos = 0;
+let leaderboard = [];
 
-// Web Audio API 音效
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function playTone(freq, duration, type, volume) {
@@ -58,84 +124,37 @@ function playTone(freq, duration, type, volume) {
   osc.stop(audioCtx.currentTime + duration);
 }
 
-function sfxPaddle() {
-  playTone(440, 0.08, 'square', 0.06);
-}
+function sfxPaddle() { playTone(440, 0.08, 'square', 0.06); }
+function sfxBrick(freq) { playTone(freq || 520, 0.12, 'square', 0.07); }
+function sfxWall() { playTone(300, 0.05, 'triangle', 0.04); }
+function sfxLose() { playTone(200, 0.3, 'sawtooth', 0.08); setTimeout(() => playTone(150, 0.4, 'sawtooth', 0.06), 150); }
+function sfxClear() { [523, 659, 784, 1047].forEach((f, i) => { setTimeout(() => playTone(f, 0.15, 'square', 0.07), i * 100); }); }
+function sfxGameOver() { playTone(400, 0.2, 'sawtooth', 0.1); setTimeout(() => playTone(300, 0.2, 'sawtooth', 0.08), 200); setTimeout(() => playTone(200, 0.4, 'sawtooth', 0.06), 400); }
 
-function sfxBrick(freq) {
-  playTone(freq || 520, 0.12, 'square', 0.07);
-}
-
-function sfxWall() {
-  playTone(300, 0.05, 'triangle', 0.04);
-}
-
-function sfxLose() {
-  playTone(200, 0.3, 'sawtooth', 0.08);
-  setTimeout(() => playTone(150, 0.4, 'sawtooth', 0.06), 150);
-}
-
-function sfxClear() {
-  [523, 659, 784, 1047].forEach((f, i) => {
-    setTimeout(() => playTone(f, 0.15, 'square', 0.07), i * 100);
-  });
-}
-
-function sfxGameOver() {
-  playTone(400, 0.2, 'sawtooth', 0.1);
-  setTimeout(() => playTone(300, 0.2, 'sawtooth', 0.08), 200);
-  setTimeout(() => playTone(200, 0.4, 'sawtooth', 0.06), 400);
-}
-
-// 粒子特效
 function spawnParticles(x, y, color, count) {
   for (let i = 0; i < (count || 12); i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 3;
-    particles.push({
-      x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 1,
-      decay: 0.015 + Math.random() * 0.02,
-      size: 2 + Math.random() * 4,
-      color
-    });
+    particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, decay: 0.015 + Math.random() * 0.02, size: 2 + Math.random() * 4, color });
   }
 }
-
 function spawnScorePopup(x, y, text) {
-  particles.push({
-    x, y, vx: 0, vy: -2, life: 1, decay: 0.02, size: 14, color: '#fff',
-    text, isText: true
-  });
+  particles.push({ x, y, vx: 0, vy: -2, life: 1, decay: 0.02, size: 14, color: '#fff', text, isText: true });
 }
-
 function updateParticles() {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
+    p.x += p.vx; p.y += p.vy;
     if (!p.isText) p.vy += 0.05;
     p.life -= p.decay;
     if (p.life <= 0) particles.splice(i, 1);
   }
 }
-
 function drawParticles() {
   for (const p of particles) {
     ctx.globalAlpha = p.life;
-    if (p.isText) {
-      ctx.fillStyle = p.color;
-      ctx.font = 'bold 14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.text, p.x, p.y);
-    } else {
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    if (p.isText) { ctx.fillStyle = p.color; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(p.text, p.x, p.y); }
+    else { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill(); }
   }
   ctx.globalAlpha = 1;
 }
@@ -144,13 +163,7 @@ function initBricks() {
   bricks = [];
   for (let r = 0; r < brickRows; r++) {
     for (let c = 0; c < brickCols; c++) {
-      bricks.push({
-        x: c * (brickW + brickPad) + brickPad,
-        y: r * (brickH + brickPad) + brickTop,
-        w: brickW, h: brickH,
-        alive: true,
-        color: `hsl(${(r/brickRows)*360}, 80%, 60%)`
-      });
+      bricks.push({ x: c * (brickW + brickPad) + brickPad, y: r * (brickH + brickPad) + brickTop, w: brickW, h: brickH, alive: true, color: `hsl(${(r/brickRows)*360}, 80%, 60%)` });
     }
   }
 }
@@ -166,180 +179,131 @@ function resetBall() {
 
 function draw() {
   ctx.save();
-  if (shake > 0) {
-    ctx.translate(Math.random() * shake - shake/2, Math.random() * shake - shake/2);
-    shake *= 0.9;
-    if (shake < 0.5) shake = 0;
-  }
-
+  if (shake > 0) { ctx.translate(Math.random() * shake - shake/2, Math.random() * shake - shake/2); shake *= 0.9; if (shake < 0.5) shake = 0; }
   ctx.clearRect(-10, -10, W + 20, H + 20);
-
-  // 磚塊
   for (let b of bricks) {
     if (!b.alive) continue;
-    ctx.fillStyle = b.color;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.roundRect(b.x, b.y, b.w, b.h, 4);
-    ctx.fill();
+    ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 4); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.beginPath();
-    ctx.roundRect(b.x + 2, b.y + 2, b.w - 4, b.h / 3, 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(b.x + 2, b.y + 2, b.w - 4, b.h / 3, 2); ctx.fill();
   }
-
-  // 球（發光效果）
-  ctx.shadowColor = '#fff';
-  ctx.shadowBlur = 15;
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.shadowColor = '#fff'; ctx.shadowBlur = 15;
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
   ctx.shadowBlur = 0;
-
-  // 球拖尾
-  if (running) {
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(ball.x - ball.dx, ball.y - ball.dy, ball.r * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  // 擋板
-  ctx.shadowColor = '#e94560';
-  ctx.shadowBlur = 12;
-  ctx.fillStyle = '#e94560';
-  ctx.beginPath();
-  ctx.roundRect(paddle.x, paddle.y, paddle.w, paddleH, 6);
-  ctx.fill();
+  if (running) { ctx.globalAlpha = 0.15; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ball.x - ball.dx, ball.y - ball.dy, ball.r * 0.7, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.shadowColor = '#e94560'; ctx.shadowBlur = 12;
+  ctx.fillStyle = '#e94560'; ctx.beginPath(); ctx.roundRect(paddle.x, paddle.y, paddle.w, paddleH, 6); ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  ctx.beginPath();
-  ctx.roundRect(paddle.x + 4, paddle.y + 2, paddle.w - 8, 4, 2);
-  ctx.fill();
-
+  ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.roundRect(paddle.x + 4, paddle.y + 2, paddle.w - 8, 4, 2); ctx.fill();
   ctx.restore();
-
-  // 粒子（不受 shake 影響）
   drawParticles();
 }
 
 function update() {
   if (keys.left && paddle.x > 0) paddle.x -= 5;
   if (keys.right && paddle.x + paddle.w < W) paddle.x += 5;
-
   updateParticles();
-
-  if (!running) {
-    resetBall();
-    return;
-  }
-
-  ball.x += ball.dx;
-  ball.y += ball.dy;
-
-  if (ball.x - ball.r < 0 || ball.x + ball.r > W) {
-    ball.dx = -ball.dx;
-    sfxWall();
-  }
-  if (ball.y - ball.r < 0) {
-    ball.dy = -ball.dy;
-    sfxWall();
-  }
-
-  // 擋板碰撞
-  if (ball.y + ball.r > paddle.y && ball.y + ball.r < paddle.y + paddleH + 4 &&
-      ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+  if (!running) { resetBall(); return; }
+  ball.x += ball.dx; ball.y += ball.dy;
+  if (ball.x - ball.r < 0 || ball.x + ball.r > W) { ball.dx = -ball.dx; sfxWall(); }
+  if (ball.y - ball.r < 0) { ball.dy = -ball.dy; sfxWall(); }
+  if (ball.y + ball.r > paddle.y && ball.y + ball.r < paddle.y + paddleH + 4 && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
     let hit = (ball.x - paddle.x) / paddle.w;
     let angle = (hit - 0.5) * Math.PI * 0.7;
     let speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy) + 0.1;
-    ball.dx = speed * Math.sin(angle);
-    ball.dy = -speed * Math.cos(angle);
-    sfxPaddle();
-    shake = 3;
-    combos = 0;
-    spawnParticles(ball.x, paddle.y, '#e94560', 5);
+    ball.dx = speed * Math.sin(angle); ball.dy = -speed * Math.cos(angle);
+    sfxPaddle(); shake = 3; combos = 0; spawnParticles(ball.x, paddle.y, '#e94560', 5);
   }
-
-  // 落球
   if (ball.y + ball.r > H) {
-    lives--;
-    livesEl.textContent = lives;
-    sfxLose();
-    shake = 8;
-    combos = 0;
-    if (lives > 0) {
-      running = false;
-      resetBall();
-    } else {
-      sfxGameOver();
-      setTimeout(() => {
-        alert('遊戲結束！得分：' + score);
-        initBricks();
-        score = 0;
-        lives = 3;
-        livesEl.textContent = lives;
-        scoreEl.textContent = score;
-        resetBall();
-      }, 500);
-    }
+    lives--; livesEl.textContent = lives;
+    sfxLose(); shake = 8; combos = 0;
+    if (lives > 0) { running = false; resetBall(); }
+    else { sfxGameOver(); showGameOver(); }
     return;
   }
-
-  // 磚塊碰撞
   for (let b of bricks) {
     if (!b.alive) continue;
-    if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
-        ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h) {
-      b.alive = false;
-      combos++;
-      score += 10 * combos;
-      scoreEl.textContent = score;
-      sfxBrick(520 + combos * 40);
-      shake = 4;
+    if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w && ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h) {
+      b.alive = false; combos++;
+      score += 10 * combos; scoreEl.textContent = score;
+      sfxBrick(520 + combos * 40); shake = 4;
       spawnParticles(b.x + b.w / 2, b.y + b.h / 2, b.color, 15);
-      if (combos > 1) {
-        spawnScorePopup(b.x + b.w / 2, b.y - 5, '+' + (10 * combos));
-      }
+      if (combos > 1) spawnScorePopup(b.x + b.w / 2, b.y - 5, '+' + (10 * combos));
       let overlapX = Math.min(ball.x + ball.r - b.x, b.x + b.w - ball.x + ball.r);
       let overlapY = Math.min(ball.y + ball.r - b.y, b.y + b.h - ball.y + ball.r);
-      if (overlapX < overlapY) ball.dx = -ball.dx;
-      else ball.dy = -ball.dy;
-      if (bricks.every(b => !b.alive)) {
-        sfxClear();
-        setTimeout(() => {
-          alert('恭喜過關！得分：' + score);
-          initBricks();
-        }, 300);
-      }
+      if (overlapX < overlapY) ball.dx = -ball.dx; else ball.dy = -ball.dy;
+      if (bricks.every(b => !b.alive)) { sfxClear(); setTimeout(() => { alert('?剖???嚗???' + score); initBricks(); }, 300); }
       break;
     }
   }
 }
 
-function gameLoop() {
-  update();
-  draw();
-  animId = requestAnimationFrame(gameLoop);
+function gameLoop() { update(); draw(); animId = requestAnimationFrame(gameLoop); }
+
+// == ??璁???==
+async function fetchLeaderboard() {
+  try {
+    const r = await fetch(GIST_RAW);
+    const data = await r.json();
+    leaderboard = data.entries || [];
+    leaderboard.sort((a, b) => b.score - a.score);
+    if (leaderboard.length > 10) leaderboard = leaderboard.slice(0, 10);
+  } catch { leaderboard = []; }
 }
+
+function renderLeaderboard() {
+  if (leaderboard.length === 0) { lbList.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">撠蝝??/div>'; return; }
+  lbList.innerHTML = leaderboard.map((e, i) =>
+    `<div class="leaderboard-entry"><span class="rank">#${i+1}</span><span class="name">${escHtml(e.name)}</span><span class="lscore">${e.score}</span></div>`
+  ).join('');
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function showLB() { renderLeaderboard(); lbOverlay.classList.add('show'); }
+function closeLB() { lbOverlay.classList.remove('show'); }
+
+function showGameOver() {
+  finalScoreEl.textContent = score;
+  nameInput.value = '';
+  gameOverOverlay.classList.add('show');
+  setTimeout(() => nameInput.focus(), 100);
+}
+
+async function submitScore() {
+  const name = nameInput.value.trim() || '?踹?';
+  gameOverOverlay.classList.remove('show');
+  const entry = { name, score, date: new Date().toISOString().slice(0, 10) };
+  leaderboard.push(entry);
+  leaderboard.sort((a, b) => b.score - a.score);
+  if (leaderboard.length > 10) leaderboard = leaderboard.slice(0, 10);
+  try {
+    const body = JSON.stringify({ files: { 'leaderboard.json': { content: JSON.stringify({ entries: leaderboard }) } } });
+    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH', headers: { Authorization: `token ${GIST_TOKEN}`, 'Content-Type': 'application/json' }, body
+    });
+  } catch {}
+  showLB();
+  setTimeout(() => { initBricks(); score = 0; lives = 3; scoreEl.textContent = score; livesEl.textContent = lives; particles = []; resetBall(); }, 0);
+}
+
+function skipScore() {
+  gameOverOverlay.classList.remove('show');
+  showLB();
+  setTimeout(() => { initBricks(); score = 0; lives = 3; scoreEl.textContent = score; livesEl.textContent = lives; particles = []; resetBall(); }, 0);
+}
+
+lbOverlay.addEventListener('click', e => { if (e.target === lbOverlay) closeLB(); });
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitScore(); });
 
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') keys.left = true;
   if (e.key === 'ArrowRight') keys.right = true;
-  if (e.key === 'r' || e.key === 'R') {
-    initBricks();
-    score = 0;
-    lives = 3;
-    scoreEl.textContent = score;
-    livesEl.textContent = lives;
-    particles = [];
-    resetBall();
-  }
-  if ((e.key === ' ' || e.key === 'Enter') && !running && lives > 0) {
+  if (e.key === 'r' || e.key === 'R') { initBricks(); score = 0; lives = 3; scoreEl.textContent = score; livesEl.textContent = lives; particles = []; resetBall(); }
+  if (e.key === 'l' || e.key === 'L') { e.preventDefault(); showLB(); }
+  if ((e.key === ' ' || e.key === 'Enter') && !running && lives > 0 && !gameOverOverlay.classList.contains('show') && !lbOverlay.classList.contains('show')) {
     running = true;
     let speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
     let angle = (Math.random() - 0.5) * 0.8;
@@ -354,7 +318,9 @@ document.addEventListener('keyup', e => {
 
 initBricks();
 resetBall();
+fetchLeaderboard();
 gameLoop();
 </script>
 </body>
 </html>
+
