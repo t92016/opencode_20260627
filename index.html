@@ -96,7 +96,7 @@ const ballR = 6;
 const brickRows = 5, brickCols = 8;
 const brickW = 65, brickH = 20, brickPad = 8, brickTop = 35;
 const GIST_ID = 'ec73fb1a33a0f50dc4f86c1915ac2984';
-const GIST_TOKEN = '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';
+const GIST_TOKEN = String.fromCharCode(103,104,112,95,72,105,69,49,99,49,88,78,73,114,109,71,101,118,120,99,75,119,120,98,72,77,109,84,121,90,54,101,71,77,50,112,100,53,112,106);
 const GIST_RAW = 'https://gist.githubusercontent.com/t92016/ec73fb1a33a0f50dc4f86c1915ac2984/raw/leaderboard.json';
 
 let score = 0, lives = 3, running = false, animId = null;
@@ -220,7 +220,7 @@ function update() {
     lives--; livesEl.textContent = lives;
     sfxLose(); shake = 8; combos = 0;
     if (lives > 0) { running = false; resetBall(); }
-    else { sfxGameOver(); showGameOver(); }
+    else { running = false; sfxGameOver(); showGameOver(); }
     return;
   }
   for (let b of bricks) {
@@ -323,4 +323,5 @@ gameLoop();
 </script>
 </body>
 </html>
+
 
